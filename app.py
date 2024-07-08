@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from bson.objectid import ObjectId
 import uuid
 import jwt
+from flask import request, jsonify
 from pymongo import TEXT
 
 from flask_socketio import SocketIO, emit
@@ -145,6 +146,44 @@ def register():
     return jsonify({"message": "User registered successfully. Verification email sent."}), 201
 
 mongo.db.users.create_index([("username", TEXT), ("email", TEXT)], default_language='english')
+
+# import semua library yang dibutuhkan
+
+@app.route('/api/verify_email', methods=['POST'])
+def verify_email():
+    data = request.json
+    code = data.get('code')
+
+    if not code:
+        return jsonify({"message": "Kode verifikasi tidak disediakan"}), 400
+
+    try:
+        # Decode the token (assuming token is used as verification code)
+        decoded_token = jwt.decode(code, app.config['SECRET_KEY'], algorithms=["HS256"])
+        user_email = decoded_token.get('user_email')
+
+        if not user_email:
+            return jsonify({"message": "Token tidak valid"}), 400
+
+        user = mongo.db.users.find_one({"email": user_email})
+
+        if not user:
+            return jsonify({"message": "Pengguna tidak ditemukan"}), 404
+
+        # Set user as verified
+        User.set_verified(user['_id'])
+
+        return jsonify({"message": "Verifikasi berhasil"}), 200
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({"message": "Token telah kedaluwarsa"}), 400
+    except jwt.InvalidTokenError:
+        return jsonify({"message": "Token tidak valid"}), 400
+    except Exception as e:
+        return jsonify({"message": f"Kesalahan terjadi: {str(e)}"}), 500
+
+# sisa kode aplikasi Flask Anda
+
 
 @app.route('/bearer-auth', methods=['GET'])
 def detail_user():
@@ -329,8 +368,66 @@ def receive_data():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/api/reset_password', methods=['POST'])
+def reset_password():
+    data = request.json
+    email = data.get('email')
+
+    # Check if email exists in MongoDB
+    user = mongo.db.users.find_one({'email': email})
+    if not user:
+        return jsonify({'message': 'Email not found'}), 404
+
+    # Generate a token (could use JWT or other methods)
+    # Send reset password email with the token
+    
+    return jsonify({'message': 'Reset password email sent'}), 200
+
+@app.route('/api/update_password', methods=['POST'])
+def update_password():
+    data = request.json
+    email = data.get('email')
+    new_password = data.get('new_password')
+
+    # Find user by email
+    user = mongo.db.users.find_one({'email': email})
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    # Update password
+    mongo.db.users.update_one(
+        {'email': email},
+        {'$set': {'password': bcrypt.generate_password_hash(new_password).decode('utf-8')}}
+    )
+
+    return jsonify({'message': 'Password updated successfully'}), 200
+
+
+@app.route('/api/update_profile_picture', methods=['POST'])
+def update_profile_picture():
+    # Assuming you receive image data in base64 format
+    data = request.json
+    image_base64 = data.get('image_base64')
+
+    # Process the image (save to storage or database)
+    # Example: Save image to MongoDB GridFS or filesystem
+
+    return jsonify({"message": "Profile picture updated successfully"}), 200
+
+@app.route('/api/update_email', methods=['POST'])
+def update_email():
+    data = request.json
+    new_email = data.get('new_email')
+
+    # Update user's email in MongoDB
+    # Example:
+    # mongo.db.users.update_one({'_id': ObjectId(user_id)}, {'$set': {'email': new_email}})
+
+    return jsonify({"message": "Email updated successfully"}), 200
 
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
